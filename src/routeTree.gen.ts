@@ -10,33 +10,63 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AnalyzerRouteImport } from './routes/analyzer'
+import { Route as ArchitectureRouteImport } from './routes/architecture'
+import { Route as VulnerabilitiesRouteImport } from './routes/vulnerabilities'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AnalyzerRoute = AnalyzerRouteImport.update({
+  id: '/analyzer',
+  path: '/analyzer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArchitectureRoute = ArchitectureRouteImport.update({
+  id: '/architecture',
+  path: '/architecture',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VulnerabilitiesRoute = VulnerabilitiesRouteImport.update({
+  id: '/vulnerabilities',
+  path: '/vulnerabilities',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/analyzer': typeof AnalyzerRoute
+  '/architecture': typeof ArchitectureRoute
+  '/vulnerabilities': typeof VulnerabilitiesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/analyzer': typeof AnalyzerRoute
+  '/architecture': typeof ArchitectureRoute
+  '/vulnerabilities': typeof VulnerabilitiesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/analyzer': typeof AnalyzerRoute
+  '/architecture': typeof ArchitectureRoute
+  '/vulnerabilities': typeof VulnerabilitiesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/analyzer' | '/architecture' | '/vulnerabilities'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/analyzer' | '/architecture' | '/vulnerabilities'
+  id: '__root__' | '/' | '/analyzer' | '/architecture' | '/vulnerabilities'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AnalyzerRoute: typeof AnalyzerRoute
+  ArchitectureRoute: typeof ArchitectureRoute
+  VulnerabilitiesRoute: typeof VulnerabilitiesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +78,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/analyzer': {
+      id: '/analyzer'
+      path: '/analyzer'
+      fullPath: '/analyzer'
+      preLoaderRoute: typeof AnalyzerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/architecture': {
+      id: '/architecture'
+      path: '/architecture'
+      fullPath: '/architecture'
+      preLoaderRoute: typeof ArchitectureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vulnerabilities': {
+      id: '/vulnerabilities'
+      path: '/vulnerabilities'
+      fullPath: '/vulnerabilities'
+      preLoaderRoute: typeof VulnerabilitiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AnalyzerRoute: AnalyzerRoute,
+  ArchitectureRoute: ArchitectureRoute,
+  VulnerabilitiesRoute: VulnerabilitiesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
