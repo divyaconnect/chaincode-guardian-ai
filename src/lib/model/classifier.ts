@@ -112,6 +112,21 @@ export function vectorize(model: TrainedModel, tokens: string[]): Map<number, nu
 
 const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
 
+const SIGNAL_LABELS: Record<string, string> = {
+  __VALUE_CALL__: "⟨ether sent via low-level call⟩",
+  __WRITE_AFTER_CALL__: "⟨state written after external call⟩",
+  STR: "⟨string⟩",
+  NUM: "⟨number⟩",
+};
+
+/** Human-readable form of a model feature (unigram or bigram). */
+export function describeSignal(term: string): string {
+  return term
+    .split(" ")
+    .map((p) => SIGNAL_LABELS[p] ?? p)
+    .join(" ");
+}
+
 export function predict(model: TrainedModel, source: string) {
   const tokens = tokenize(source);
   const x = vectorize(model, tokens);
@@ -155,8 +170,21 @@ function evidenceLines(source: string, signals: string[]) {
   const lines = source.split(/\r?\n/);
   const hits: { line: number; code: string }[] = [];
   const seen = new Set<number>();
-  for (const sig of signals) {
-    const parts = sig.split(" ");
+  for (const raw of signals) {
+    if (raw.includes("__WRITE_AFTER_CALL__")) continue;
+    if (raw.includes("__VALUE_CALL__")) {
+      const i = lines.findIndex(
+        (l, k) => !seen.has(k) && /\.call\s*(\{\s*value|\.value)/.test(l.replace(/\/\/.*$/, "")),
+      );
+      if (i >= 0 && hits.length < 4) {
+        seen.add(i);
+        hits.push({ line: i + 1, code: lines[i]!.trim() });
+      }
+      continue;
+    }
+    // Skip features too generic to localize (pure punctuation / literals).
+    if (!/[A-Za-z]{2,}/.test(raw.replace(/\b(STR|NUM)\b/g, ""))) continue;
+    const parts = raw.split(" ");
     for (let i = 0; i < lines.length && hits.length < 4; i++) {
       if (seen.has(i)) continue;
       const toks = tokenize(lines[i]!);
