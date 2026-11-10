@@ -228,7 +228,7 @@ export function analyze(model: TrainedModel, source: string): ModelReport {
         impact: info.impact,
         recommendation: info.recommendation,
         referencePattern: info.referencePattern,
-        signals: p.signals,
+        signals: p.signals.map(describeSignal),
         evidence: evidenceLines(source, p.signals),
       };
     })
