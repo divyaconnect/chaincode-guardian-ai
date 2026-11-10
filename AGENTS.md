@@ -28,3 +28,9 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Contract audits run in `src/lib/audit.functions.ts` via the AI Gateway Responses API with a strict JSON schema; keep the schema and `AuditReport` type in `src/lib/audit-types.ts` in sync — the UI renders the report directly from that shape.
+- The static pre-scan (`src/lib/static-scan.ts`) is pure and runs client-side; keep it dependency-free and covered by `src/test/static-scan.test.ts`.
+- Design tokens (severity colors, signal accent, surfaces) live in `src/styles.css`; components use those tokens, never raw colors.
