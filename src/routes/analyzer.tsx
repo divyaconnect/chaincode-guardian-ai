@@ -4,9 +4,9 @@ import { useMutation } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Brain,
   CheckCircle2,
   ChevronDown,
+  Cpu,
   Download,
   Loader2,
   Play,
@@ -20,8 +20,9 @@ import { staticScan } from "@/lib/static-scan";
 import {
   SEVERITIES,
   severityClasses,
-  type AuditFinding,
-  type AuditReport,
+  type CategoryScore,
+  type ModelFinding,
+  type ModelReport,
   type Severity,
 } from "@/lib/audit-types";
 
@@ -32,12 +33,12 @@ export const Route = createFileRoute("/analyzer")({
       {
         name: "description",
         content:
-          "Paste a Solidity smart contract and get an AI-assisted security audit with severity-ranked findings and fixes.",
+          "Paste a Solidity smart contract and get a repeatable security audit from a model trained on 44k+ labeled real-world contracts.",
       },
       { property: "og:title", content: "Smart Contract Analyzer — Sentinel.sol" },
       {
         property: "og:description",
-        content: "Static pre-scan plus AI deep analysis for Solidity contracts.",
+        content: "Static pre-scan plus a trained vulnerability classifier for Solidity contracts.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -84,8 +85,9 @@ function AnalyzerPage() {
       <p className="eyebrow mb-3">Analyzer</p>
       <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Audit a smart contract</h1>
       <p className="mt-3 max-w-2xl text-muted-foreground">
-        Paste Solidity source or load a sample. The static pre-scan runs as you type; the AI deep
-        analysis runs when you press Analyze.
+        Paste Solidity source or load a sample. The static pre-scan runs as you type; the trained
+        vulnerability model runs when you press Analyze — the same contract always gets the same
+        result.
       </p>
 
       <div className="mt-8 flex flex-wrap gap-2">
@@ -176,15 +178,13 @@ function AnalyzerPage() {
               Could not reach the analysis service. Please try again.
             </div>
           )}
-          {report && result?.ok && (
-            <ReportPanel report={report} durationMs={result.durationMs} model={result.model} />
-          )}
+          {report && result?.ok && <ReportPanel report={report} durationMs={result.durationMs} />}
           {!mutation.isPending && !result && (
             <div className="rounded-md border border-dashed border-border p-8 text-center">
-              <Brain className="mx-auto size-6 text-muted-foreground" />
+              <Cpu className="mx-auto size-6 text-muted-foreground" />
               <p className="mt-3 text-sm text-muted-foreground">
-                Press <span className="font-mono text-signal">Analyze</span> to run the AI deep
-                analysis.
+                Press <span className="font-mono text-signal">Analyze</span> to run the trained
+                vulnerability model.
               </p>
             </div>
           )}
@@ -214,7 +214,7 @@ function StaticPanel({ hits }: { hits: ReturnType<typeof staticScan> }) {
       </header>
       {hits.length === 0 ? (
         <p className="px-5 py-4 text-sm text-muted-foreground">
-          No known risky patterns matched. AI analysis may still find logic issues.
+          No known risky patterns matched by the rule set.
         </p>
       ) : (
         <ul className="divide-y divide-border">
@@ -245,13 +245,12 @@ function ScanningPanel() {
         <div className="h-1/3 w-full bg-gradient-to-b from-transparent via-signal/10 to-transparent animate-scan" />
       </div>
       <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-signal">
-        <Loader2 className="size-4 animate-spin" /> Stage 2 · AI deep analysis
+        <Loader2 className="size-4 animate-spin" /> Stage 2 · Trained model inference
       </p>
       <ul className="mt-4 space-y-1.5 font-mono text-xs text-muted-foreground">
-        <li>› building control-flow model…</li>
-        <li>› tracing external calls and state writes…</li>
-        <li>› evaluating access control and arithmetic…</li>
-        <li>› drafting remediation patches…</li>
+        <li>› tokenizing source…</li>
+        <li>› building TF-IDF feature vector…</li>
+        <li>› scoring 8 vulnerability classifiers…</li>
       </ul>
     </section>
   );
@@ -265,20 +264,29 @@ function scoreTone(score: number) {
   return "text-critical";
 }
 
-function toMarkdown(r: AuditReport) {
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+function toMarkdown(r: ModelReport) {
   const lines = [
-    `# Security Audit — ${r.contractName}`,
+    `# Security Audit Report`,
     "",
-    `**Score:** ${r.securityScore}/100 · **Risk:** ${r.riskLevel}`,
+    `**Model:** ${r.modelVersion} · **Score:** ${r.securityScore}/100 · **Risk:** ${r.riskLevel}`,
     "",
-    r.summary,
+    "## Category probabilities",
+    "",
+    "| Category | Probability | Threshold | Detected |",
+    "|---|---|---|---|",
+    ...r.categoryScores.map(
+      (c) => `| ${c.title} | ${pct(c.probability)} | ${pct(c.threshold)} | ${c.detected ? "yes" : "no"} |`,
+    ),
     "",
     "## Findings",
   ];
+  if (r.findings.length === 0) lines.push("", "No vulnerability category exceeded its threshold.");
   r.findings.forEach((f, i) => {
     lines.push(
       "",
-      `### ${i + 1}. [${f.severity}] ${f.title} (${f.swc}, lines ${f.lines})`,
+      `### ${i + 1}. [${f.severity}] ${f.title} (${f.swc}) — ${pct(f.probability)}`,
       "",
       f.description,
       "",
@@ -286,29 +294,16 @@ function toMarkdown(r: AuditReport) {
       "",
       `**Recommendation:** ${f.recommendation}`,
       "",
-      "```solidity",
-      f.fixedSnippet,
-      "```",
+      `**Model signals:** ${f.signals.join(", ")}`,
+      ...(f.evidence.length
+        ? ["", "**Evidence lines:**", ...f.evidence.map((e) => `- L${e.line}: \`${e.code}\``)]
+        : []),
     );
   });
-  if (r.gasOptimizations.length) {
-    lines.push("", "## Gas optimizations", ...r.gasOptimizations.map((g) => `- ${g}`));
-  }
-  if (r.bestPractices.length) {
-    lines.push("", "## Best practices", ...r.bestPractices.map((g) => `- ${g}`));
-  }
   return lines.join("\n");
 }
 
-function ReportPanel({
-  report,
-  durationMs,
-  model,
-}: {
-  report: AuditReport;
-  durationMs: number;
-  model: string;
-}) {
+function ReportPanel({ report, durationMs }: { report: ModelReport; durationMs: number }) {
   const counts = SEVERITIES.map((s) => ({
     s,
     n: report.findings.filter((f) => f.severity === s).length,
@@ -320,7 +315,7 @@ function ReportPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${report.contractName || "audit"}-report.md`;
+    a.download = `sentinel-audit-report.md`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -329,9 +324,9 @@ function ReportPanel({
     <section className="rounded-md border border-border bg-surface">
       <header className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
         <div className="flex items-center gap-2">
-          <Brain className="size-4 text-signal" />
+          <Cpu className="size-4 text-signal" />
           <h2 className="font-mono text-xs uppercase tracking-wider">
-            Stage 2 · AI security report
+            Stage 2 · Trained model report
           </h2>
         </div>
         <Button variant="ghost" size="sm" onClick={download}>
@@ -363,16 +358,20 @@ function ReportPanel({
         </div>
         <div className="min-w-0">
           <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-            {report.contractName} · risk{" "}
-            <span className={scoreTone(report.securityScore)}>{report.riskLevel}</span>
+            Risk <span className={scoreTone(report.securityScore)}>{report.riskLevel}</span> ·{" "}
+            {report.findings.length} categor{report.findings.length === 1 ? "y" : "ies"} flagged
           </p>
-          <p className="mt-2 text-sm">{report.summary}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Score = 100 − Σ (severity weight × probability) over flagged categories.
+          </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {counts.map(({ s, n }) => (
               <span
                 key={s}
                 className={`rounded-sm border px-2 py-0.5 font-mono text-[10px] ${
-                  n ? `${severityClasses[s].text} ${severityClasses[s].border}` : "border-border text-muted-foreground/50"
+                  n
+                    ? `${severityClasses[s].text} ${severityClasses[s].border}`
+                    : "border-border text-muted-foreground/50"
                 }`}
               >
                 {s} {n}
@@ -382,53 +381,62 @@ function ReportPanel({
         </div>
       </div>
 
+      <CategoryBars scores={report.categoryScores} />
+
       {report.findings.length === 0 ? (
-        <p className="flex items-center gap-2 px-5 py-5 text-sm text-signal">
-          <CheckCircle2 className="size-4" /> No vulnerabilities detected.
+        <p className="flex items-center gap-2 border-t border-border px-5 py-5 text-sm text-signal">
+          <CheckCircle2 className="size-4" /> No vulnerability category exceeded its detection
+          threshold.
         </p>
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="divide-y divide-border border-t border-border">
           {report.findings.map((f, i) => (
-            <FindingItem key={i} finding={f} defaultOpen={i === 0} />
+            <FindingItem key={f.category} finding={f} defaultOpen={i === 0} />
           ))}
         </ul>
       )}
 
-      {(report.gasOptimizations.length > 0 || report.bestPractices.length > 0) && (
-        <div className="grid gap-6 border-t border-border p-5 sm:grid-cols-2">
-          {report.gasOptimizations.length > 0 && (
-            <ListBlock title="Gas optimizations" items={report.gasOptimizations} />
-          )}
-          {report.bestPractices.length > 0 && (
-            <ListBlock title="Best practices" items={report.bestPractices} />
-          )}
-        </div>
-      )}
-
       <p className="border-t border-border px-5 py-3 font-mono text-[10px] text-muted-foreground">
-        {model} · {(durationMs / 1000).toFixed(1)}s · AI output is advisory — verify before deploying.
+        {report.modelVersion} · {report.tokenCount.toLocaleString()} tokens ·{" "}
+        {durationMs.toLocaleString()} ms · deterministic — same input, same output.
       </p>
     </section>
   );
 }
 
-function ListBlock({ title, items }: { title: string; items: string[] }) {
+function CategoryBars({ scores }: { scores: CategoryScore[] }) {
   return (
-    <div>
-      <h3 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <ul className="mt-2 space-y-1.5 text-sm">
-        {items.map((it, i) => (
-          <li key={i} className="flex gap-2">
-            <span className="text-signal">›</span>
-            <span>{it}</span>
-          </li>
-        ))}
-      </ul>
+    <div className="space-y-2.5 p-5">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Classifier probabilities · tick = detection threshold
+      </p>
+      {scores.map((c) => (
+        <div key={c.category} className="grid grid-cols-[150px_1fr_44px] items-center gap-3">
+          <span className={`truncate text-xs ${c.detected ? "text-foreground" : "text-muted-foreground"}`}>
+            {c.title}
+          </span>
+          <div className="relative h-2 rounded-full bg-muted">
+            <div
+              className={`h-full rounded-full ${c.detected ? "bg-critical" : "bg-signal/40"}`}
+              style={{ width: pct(c.probability) }}
+            />
+            <div
+              className="absolute -top-0.5 h-3 w-px bg-foreground/70"
+              style={{ left: pct(c.threshold) }}
+            />
+          </div>
+          <span
+            className={`text-right font-mono text-xs ${c.detected ? "text-critical" : "text-muted-foreground"}`}
+          >
+            {pct(c.probability)}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
 
-function FindingItem({ finding: f, defaultOpen }: { finding: AuditFinding; defaultOpen: boolean }) {
+function FindingItem({ finding: f, defaultOpen }: { finding: ModelFinding; defaultOpen: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <li>
@@ -441,7 +449,7 @@ function FindingItem({ finding: f, defaultOpen }: { finding: AuditFinding; defau
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">{f.title}</span>
           <span className="font-mono text-xs text-muted-foreground">
-            {f.swc} · lines {f.lines} · {f.confidence}% confidence
+            {f.swc} · probability {pct(f.probability)}
           </span>
         </span>
         <ChevronDown
@@ -459,35 +467,41 @@ function FindingItem({ finding: f, defaultOpen }: { finding: AuditFinding; defau
             <span className="font-mono text-xs uppercase tracking-wider text-signal">Fix · </span>
             {f.recommendation}
           </p>
-          <div className="grid gap-3 md:grid-cols-2">
-            <CodeBlock label="Vulnerable" tone="critical" code={f.vulnerableSnippet} />
-            <CodeBlock label="Patched" tone="signal" code={f.fixedSnippet} />
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              Top model signals
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {f.signals.map((s) => (
+                <code
+                  key={s}
+                  className="rounded-sm border border-border bg-code px-1.5 py-0.5 font-mono text-[11px]"
+                >
+                  {s}
+                </code>
+              ))}
+            </div>
+          </div>
+          {f.evidence.length > 0 && (
+            <div className="overflow-hidden rounded-sm border border-critical/40 bg-code">
+              <p className="border-b border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-critical">
+                Evidence lines
+              </p>
+              <pre className="overflow-x-auto p-3 font-mono text-[11px] leading-5">
+                {f.evidence.map((e) => `${String(e.line).padStart(3, " ")} │ ${e.code}`).join("\n")}
+              </pre>
+            </div>
+          )}
+          <div className="overflow-hidden rounded-sm border border-signal/40 bg-code">
+            <p className="border-b border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-signal">
+              Reference secure pattern
+            </p>
+            <pre className="overflow-x-auto p-3 font-mono text-[11px] leading-5">
+              {f.referencePattern}
+            </pre>
           </div>
         </div>
       )}
     </li>
-  );
-}
-
-function CodeBlock({
-  label,
-  tone,
-  code,
-}: {
-  label: string;
-  tone: "critical" | "signal";
-  code: string;
-}) {
-  return (
-    <div
-      className={`overflow-hidden rounded-sm border bg-code ${tone === "critical" ? "border-critical/40" : "border-signal/40"}`}
-    >
-      <p
-        className={`border-b border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider ${tone === "critical" ? "text-critical" : "text-signal"}`}
-      >
-        {label}
-      </p>
-      <pre className="overflow-x-auto p-3 font-mono text-[11px] leading-5">{code}</pre>
-    </div>
   );
 }

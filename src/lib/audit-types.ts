@@ -2,32 +2,41 @@ export type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
 
 export const SEVERITIES: Severity[] = ["Critical", "High", "Medium", "Low", "Info"];
 
-export interface AuditFinding {
+export interface CategoryScore {
+  category: string;
+  title: string;
+  probability: number;
+  threshold: number;
+  detected: boolean;
+}
+
+export interface ModelFinding {
+  category: string;
   title: string;
   severity: Severity;
   swc: string;
-  category: string;
-  lines: string;
+  probability: number;
+  threshold: number;
   description: string;
   impact: string;
   recommendation: string;
-  vulnerableSnippet: string;
-  fixedSnippet: string;
-  confidence: number;
+  referencePattern: string;
+  /** Highest-weighted code features that drove this prediction. */
+  signals: string[];
+  evidence: { line: number; code: string }[];
 }
 
-export interface AuditReport {
-  contractName: string;
-  summary: string;
+export interface ModelReport {
+  modelVersion: string;
   securityScore: number;
   riskLevel: "Critical" | "High" | "Medium" | "Low" | "Safe";
-  findings: AuditFinding[];
-  gasOptimizations: string[];
-  bestPractices: string[];
+  tokenCount: number;
+  findings: ModelFinding[];
+  categoryScores: CategoryScore[];
 }
 
 export type AuditResult =
-  | { ok: true; report: AuditReport; model: string; durationMs: number }
+  | { ok: true; report: ModelReport; durationMs: number }
   | { ok: false; error: string };
 
 export const severityClasses: Record<Severity, { text: string; bg: string; border: string }> = {
